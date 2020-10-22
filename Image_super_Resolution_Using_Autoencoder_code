@@ -1,0 +1,122 @@
+from tensorflow.keras.layers import Input, Dense, Conv2D, MaxPooling2D, Dropout, Conv2DTranspose, UpSampling2D, add
+from tensorflow.keras.models import Model
+from tensorflow.keras import regularizers
+
+#encoder
+input_img = Input(shape=(256, 256, 3))
+
+l1 = Conv2D(64, (3, 3), padding='same', activation='relu', activity_regularizer=regularizers.l1(10e-10))(input_img)
+l2 = Conv2D(64, (3, 3), padding='same', activation='relu', activity_regularizer=regularizers.l1(10e-10))(l1)
+l3 = MaxPooling2D(padding='same')(l2)
+l3 = Dropout(0.3)(l3)
+l4 = Conv2D(128, (3, 3),  padding='same', activation='relu', activity_regularizer=regularizers.l1(10e-10))(l3)
+l5 = Conv2D(128, (3, 3), padding='same', activation='relu', activity_regularizer=regularizers.l1(10e-10))(l4)
+l6 = MaxPooling2D(padding='same')(l5)
+l7 = Conv2D(256, (3, 3), padding='same', activation='relu', activity_regularizer=regularizers.l1(10e-10))(l6)
+encoder = Model(input_img, l7)
+
+encoder.summary()
+
+# Decoder
+
+l8 = UpSampling2D()(l7)
+
+l9 = Conv2D(128, (3, 3), padding='same', activation='relu',
+            activity_regularizer=regularizers.l1(10e-10))(l8)
+l10 = Conv2D(128, (3, 3), padding='same', activation='relu',
+             activity_regularizer=regularizers.l1(10e-10))(l9)
+
+l11 = add([l5, l10])
+l12 = UpSampling2D()(l11)
+l13 = Conv2D(64, (3, 3), padding='same', activation='relu',
+             activity_regularizer=regularizers.l1(10e-10))(l12)
+l14 = Conv2D(64, (3, 3), padding='same', activation='relu',
+             activity_regularizer=regularizers.l1(10e-10))(l13)
+
+l15 = add([l14, l2])
+
+# chan = 3, for RGB
+decoded = Conv2D(3, (3, 3), padding='same', activation='relu', activity_regularizer=regularizers.l1(10e-10))(l15)
+
+# Create our network
+autoencoder = Model(input_img, decoded)
+# You'll understand later what this is
+autoencoder_hfenn = Model(input_img, decoded)
+
+autoencoder.summary()
+
+
+autoencoder.compile(optimizer='adadelta', loss='mean_squared_error')
+
+
+autoencoder.summary()
+
+
+import os
+import cv2
+import re
+from scipy import ndimage, misc
+from skimage.transform import resize, rescale
+from matplotlib import pyplot
+import numpy as np
+from tqdm import tqdm
+
+def get_images():
+  images = []
+  x_train_n = []
+  x_train_down = []
+  count = 0
+  #/content/Completed_Notebook_Data_Autoencoders/data/res
+  for root, dirnames, filenames in os.walk(r"C:\Users\DELL\Desktop\cars_train"):
+    for filename in tqdm(filenames):
+      if re.search("\.(jpg|jpeg|JPEG|png|bmp|tiff|jfif)$", filename):
+        filepath = os.path.join(root, filename)
+        image = cv2.imread(filepath)
+        image_resized = cv2.imread(image, (256,256))
+        x_train_n.append(image_resized) #add this image to highgh res dataset
+        dwn1 = rescale(image_resized, 2) #down acale the image, but maintain the high image resolution
+        x_train_down.append(rescale(dwn1, 0.5))
+        count = count +1
+        if count ==500:
+          break
+    return x_train_n,x_train_down
+    
+    
+    x_train_n , x_train_down = get_images()
+x_train_n = np.array(x_train_n)
+x_train_down = np.array(x_train_down)
+
+autoendoder.fit(x_train_down, x_train_n, epochs=10, batch_size=10, shuffle=True, validation_split=0.15)
+
+
+encoded_imgs = encoder.predict(x_train_down)
+
+
+encoded_imgs.shape
+
+
+sr1 = np.clip(autoencoder.predict(x_train_down), 0.0, 1.0)
+
+sr1.shape
+
+image_index = 1
+
+import matplotlib.pyplot as plot
+
+plt.figure(figure=(128, 128))
+i = 1
+ax = plot.subplot(10, 10, i)
+plt.imshow(x_train_down[image_index])
+i += 1
+ax = plot.subplot(10, 10, i)
+plt.imshow(x_train_down[image_index], interpolation="bicubic")
+i += 1
+ax = plot.subplot(10, 10, i)
+plt.imshow(encoded_imgs[image_index].reshape(64*64, 256))
+i += 1
+ax = plot.subplot(10, 10, i)
+plt.imshow(sr1[image_index])
+i += 1
+ax = plt.subplot(10, 10, i)
+plt.imshow(x_train_n[image_index])
+plt.show()
